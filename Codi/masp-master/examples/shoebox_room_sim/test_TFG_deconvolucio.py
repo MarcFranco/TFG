@@ -42,6 +42,7 @@ import math
 import statistics 
 from scipy import signal
 import scipy.signal as sig
+import soundfile as sf
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # SETUP
 
@@ -111,10 +112,56 @@ print('Elapsed time is ' + str(toc-tic) + 'seconds.')
 # Each source is convolved with the respective mic IR, and summed with
 # the rest of the sources to create the microphone mixed signals
 
-sourcepath = '../../data/milk_cow_blues_4src.wav'
+sourcepath = 'C:\TFG\Codi\masp-master\data/milk_cow_blues_4src.wav'
 src_sigs = librosa.core.load(sourcepath, sr=None, mono=False)[0].T[:,:nSrc]
 
 mic_sigs = srs.apply_source_signals_mic(mic_rirs, src_sigs)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# ANDRES EDIT-- DECONVOLUTION
+
+def plot(x, title):
+    fig, axs = plt.subplots(2, 1, figsize=(7, 7))
+    axs[0].set_title(title)
+    axs[0].plot(x)
+    Pxx, freqs, bins, im = axs[1].specgram(x, 1024, fs, noverlap=900)
+    plt.show()
+
+fs=48000
+import os.path
+file_path = 'C:\TFG\Codi\masp-master\sounds'  # change it to your folder
+
+# Anechoic sweep
+#x, _ = librosa.load(os.path.join(file_path, 'sweep_20_24k_48kHz_6s_-20dBFS_peak.wav'), fs)
+x, _ = librosa.load(os.path.join(file_path, 'ess_48k.wav'), fs)
+plot(x, title=None)
+
+# Inverse sweep: time-reversed, but also amplitude correction (see Farina)
+#x_inv,_ = librosa.load(os.path.join(file_path, 'inv_sweep_20_24k_48kHz_6s.wav'), fs)
+x_inv,_ = librosa.load(os.path.join(file_path, 'inv_ess_48k.wav'), fs)
+plot(x_inv, title=None)
+
+# Convolution of them yields a delta, as expected (it is the identity element of convolution)
+d = sig.fftconvolve(x, x_inv)
+d *= 1/(np.abs(max(d))) # normalization
+d = d[x_inv.size:] # adjust length because of FFT
+plot(d, title=None)
+
+# now, get an impulse response
+h = mic_rirs[:,0,0]
+plot(h, title='Impulse response h(t)')
+
+# convolve the anechoic sweep with the IR. This simulates the microphone signal after the room excitation
+r = sig.fftconvolve(x, h)
+plot(r, title='Reverberant signal r(t) = x(t)*h(t)')
+
+# convolution with inverse log sweep should yield an accurate estimate of the IR
+c = sig.fftconvolve(r, x_inv)
+c *= 1/(np.abs(max(c))) # normalization
+c = c[x_inv.size:x_inv.size+h.size] # adjust length because of FFT
+plot(c, title=None)
+
+# end of ANDRES EDIT-- DECONVOLUTION
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # DECONVOLUTION
@@ -128,17 +175,13 @@ def log_sinesweep(finf,fsup,T,t,fs):
     sweep=np.sin(K*(np.exp(t/L)-1.0))  
     return sweep
 
-# Inverse filter
+# Inverse filter = Reverse Logarithmic SineSweep w/ Magnitude Modulation
 def inverse_filter(finf,fsup,T,t,x):
     w1 = 2*np.pi*finf
-    w2 = 2*np.pi*fsup   
-    #Haciendo esto sale una respuesta impulsional pero el filtro no compensa el señal original
-    #kend = -6*np.log2(w2/w1)    
-    #k = np.exp(t*kend/T)
-    R= np.log(w2/w1)
-    k = np.exp(t*R/T)
-    
-    inv = x[::-1]/k
+    w2 = 2*np.pi*fsup  
+    L = T / np.log(w2/w1)
+    N = np.exp(t/L)   
+    inv = x[::-1]/N
     return inv
 
 def spectrumDBFS(x, fs, win=None):
@@ -155,52 +198,75 @@ def spectrumDBFS(x, fs, win=None):
     s_dbfs = 20 * np.log10(s_mag/ref)
     return freq, s_dbfs
 
+def plots(x, xdB, title):
+    if xdB is not None:
+        fig, axs = plt.subplots(3, 1, figsize=(7,7))
+        axs[0].set_title(title)
+        axs[0].plot(x)
+        Pxx, freqs, bins, im = axs[1].specgram(x, 1024, fs, noverlap=900)
+        axs[2].semilogx(freq, xdB)
+    else:
+        fig, axs = plt.subplots(2, 1, figsize=(7,7))
+        axs[0].set_title(title)
+        axs[0].plot(x)
+        Pxx, freqs, bins, im = axs[1].specgram(x, 1024, fs, noverlap=900)
+            
+def plots_allSpectrum(x,h,y,label1,label2,label3,freq):
+    plt.figure()
+    plt.grid()
+    plt.semilogx(freq, x, label=label1)
+    plt.semilogx(freq, h, label=label2)
+    plt.semilogx(freq, y, label=label3)
+    plt.title('Spectrum')
+    plt.xlabel('Frequency [Hz]')
+    plt.ylabel('Amplitude [dBFS]')
+    plt.legend()
+    plt.show()
+
 finf = 10
 fsup = 22000
-T = 3
-fs = 44100
+T = 6
+fs = 48000
 t = np.arange(0,T*fs)/fs
 
-
 sinesweep=log_sinesweep(finf,fsup,T,t,fs)
+sf.write('sinesweep.wav', sinesweep, 48000)
 inversefilter=inverse_filter(finf,fsup,T,t,sinesweep)
-measuredsignal = sig.fftconvolve(log_sinesweep,inversefilter,mode='same')
+sf.write('inversefilter.wav', inversefilter, 48000)
+delta = sig.fftconvolve(sinesweep, inversefilter, mode='same')
+delta = delta/(np.abs(max(delta))) # normalization
+delta = delta[:inversefilter.size] # adjust length because of FFT
+sf.write('delta.wav', delta, 48000)
 
-impulseresponse = sig.fftconvolve(sinesweep, inversefilter, mode='same')
-
-# Get spectra of all signals
 freq, sinesweepdB = spectrumDBFS(sinesweep, fs)
 freq, inversefilterdB = spectrumDBFS(inversefilter, fs)
-freq, impulseresponsedB = spectrumDBFS(impulseresponse, fs)
+freq, deltadB = spectrumDBFS(delta, fs)
 
-fig, axs = plt.subplots(3, 1, figsize=(7,7))
-axs[0].set_title('Logarithmic SineSweep x(t)')
-axs[0].plot(t, sinesweep)
-Pxx, freqs, bins, im = axs[1].specgram(sinesweep, 1024, fs, noverlap=900)
-axs[2].semilogx(freq, sinesweepdB)
+plots(sinesweep,sinesweepdB,'Logarithmic SineSweep x(t)')
+plots(inversefilter,inversefilterdB,'Inverse filter f(t)')
+plots(delta,deltadB,'Delta = x(t) * f(t)')
+plots_allSpectrum(sinesweepdB,inversefilterdB,deltadB,'Log. SineSweep','Inverse filter','Delta',freq)
 
-fig, axs = plt.subplots(3, 1, figsize=(7,7))
-axs[0].set_title('Inverse filter f(t)')
-axs[0].plot(t, inversefilter)
-Pxx, freqs, bins, im = axs[1].specgram(inversefilter, 1024, fs, noverlap=900)
-axs[2].semilogx(freq, inversefilterdB)
+impulseresponse = mic_rirs[:,0,0] #get an Impulse Response
+sf.write('IR.wav', impulseresponse, 48000)
+#freq, impulseresponsedB = spectrumDBFS(impulseresponse, fs)
+#plots(impulseresponse,impulseresponsedB,'Impulse response h(t)')
+plots(impulseresponse, None, 'Impulse response h(t)')
 
-fig, axs = plt.subplots(2, 1, figsize=(7,7))
-axs[0].set_title('Impulse Response')
-axs[0].plot(t, impulseresponse)
-Pxx, freqs, bins, im = axs[1].specgram(impulseresponse, 1024, fs, noverlap=900)
-axs[2].semilogx(freq, impulseresponsedB)
+measured = sig.fftconvolve(sinesweep,impulseresponse)
+sf.write('measured.wav', measured, 48000)
+#freq, measureddB = spectrumDBFS(measured, fs)
+#plots(measured,measureddB,'Measured  y(t) = x(t)*h(t)')
+plots(measured, None,'Measured  y(t) = x(t)*h(t)')
 
-plt.figure()
-plt.grid()
-plt.semilogx(freq, sinesweepdB, label='Log. SineSweep')
-plt.semilogx(freq, inversefilterdB, label='Inverse filter')
-plt.semilogx(freq, impulseresponsedB, label='Impulse Response')
-plt.title('Spectrum')
-plt.xlabel('Frequency [Hz]')
-plt.ylabel('Amplitude [dBFS]')
-plt.legend()
-plt.show()
+estimationIR = sig.fftconvolve(measured, inversefilter)
+estimationIR = estimationIR/(np.abs(max(estimationIR))) # normalization
+sf.write('estimatedIR.wav', estimationIR, 48000)
+#freq, estimationIRdB = spectrumDBFS(estimationIR, fs)
+#plots(estimationIR,estimationIRdB,'Estimated IR  h(t) = y(t)*x_inv(t)')
+plots(estimationIR, None,'Estimated IR  h(t) = y(t)*x_inv(t)')
+
+
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # FUNCTIONS TO COMPUTE THE ACOUSTIC PARAMETERS
 
