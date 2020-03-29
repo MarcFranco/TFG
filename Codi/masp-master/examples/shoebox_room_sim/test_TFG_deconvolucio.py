@@ -117,6 +117,49 @@ src_sigs = librosa.core.load(sourcepath, sr=None, mono=False)[0].T[:,:nSrc]
 
 mic_sigs = srs.apply_source_signals_mic(mic_rirs, src_sigs)
 
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+# ANDRES EDIT-- DECONVOLUTION
+
+def plot(x, title):
+    fig, axs = plt.subplots(2, 1, figsize=(7, 7))
+    axs[0].set_title(title)
+    axs[0].plot(x)
+    Pxx, freqs, bins, im = axs[1].specgram(x, 1024, fs, noverlap=900)
+    plt.show()
+
+import os.path
+file_path = '/Users/andres.perez/Downloads'  # change it to your folder
+
+# Anechoic sweep
+x, _ = librosa.load(os.path.join(file_path, 'sweep_20_24k_48kHz_6s_-20dBFS_peak.wav'), fs)
+plot(x, title=None)
+
+# Inverse sweep: time-reversed, but also amplitude correction (see Farina)
+x_inv,_ = librosa.load(os.path.join(file_path, 'inv_sweep_20_24k_48kHz_6s.wav'), fs)
+plot(x_inv, title=None)
+
+# Convolution of them yields a delta, as expected (it is the identity element of convolution)
+d = sig.fftconvolve(x, x_inv)
+d *= 1/(np.abs(max(d))) # normalization
+d = d[x_inv.size:] # adjust length because of FFT
+plot(d, title=None)
+
+# now, get an impulse response
+h = mic_rirs[:,0,0]
+plot(h, title='Impulse response h(t)')
+
+# convolve the anechoic sweep with the IR. This simulates the microphone signal after the room excitation
+r = sig.fftconvolve(x, h)
+plot(r, title='Reverberant signal r(t) = x(t)*h(t)')
+
+# convolution with inverse log sweep should yield an accurate estimate of the IR
+c = sig.fftconvolve(r, x_inv)
+c *= 1/(np.abs(max(c))) # normalization
+c = c[x_inv.size:x_inv.size+h.size] # adjust length because of FFT
+plot(c, title=None)
+
+# end of ANDRES EDIT-- DECONVOLUTION
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # ANDRES EDIT-- DECONVOLUTION
 
