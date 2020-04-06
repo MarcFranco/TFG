@@ -358,7 +358,19 @@ def maf_plot(weights):
     plt.ylabel('Angle (radians)')
     plt.xlabel('Frequency [rad/sample]')
     plt.show()
-
+    
+def plot_reg(EdB,begin_sample,end_sample):
+    plt.figure()
+    #a=np.zeros(EdB.size)  
+    #a[begin_sample:begin_sample+1] = [EdB[begin_sample]]  
+    #b=np.zeros(EdB.size)  
+    #b[end_sample:end_sample+1] = [EdB[end_sample]]
+    markers_on = [begin_sample, end_sample]
+    plt.plot(EdB, '-gD', markevery=markers_on)
+    plt.ylabel('dB')
+    plt.xlabel('Samples')
+    plt.show()
+    
 def revTime60(data,band_centerfreqs,window,rt_type,oct_type):    
     band_type, low, high = check_type(oct_type,band_centerfreqs) # Assign returned tuple 
     begin,end,factor=RT_estimator(rt_type)
@@ -379,12 +391,14 @@ def revTime60(data,band_centerfreqs,window,rt_type,oct_type):
         # Schroeder integration
         A = np.cumsum(maIR[::-1]**2)[::-1]
         EdB = 20.0 * np.log10(A/np.max(A))
-        
         # Linear regression of Schroeder curve w/ L
         schroeder_begin = EdB[np.abs(EdB - begin).argmin()]
         schroeder_end = EdB[np.abs(EdB - end).argmin()]
         begin_sample = np.where(EdB == schroeder_begin)[0][0]
         end_sample = np.where(EdB == schroeder_end)[0][0] 
+        
+        plot_reg(EdB,begin_sample,end_sample)
+        
         L = np.arange(begin_sample, end_sample + 1) / fs
         schroeder = EdB[begin_sample:end_sample + 1]
         slope, intercept = stats.linregress(L, schroeder)[0:2]
@@ -394,11 +408,54 @@ def revTime60(data,band_centerfreqs,window,rt_type,oct_type):
         
     return rt60
 
+#window=5001
+#rt_type='rt30'
+#oct_type='third'
+#rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
+#rt60_estimationIR = revTime60(estimationIR,band_centerfreqs,window,rt_type,oct_type)
+
+
 window=5001
 rt_type='rt30'
 oct_type='third'
-rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
-rt60_estimationIR = revTime60(estimationIR,band_centerfreqs,window,rt_type,oct_type)
+band_type, low, high = check_type(oct_type,band_centerfreqs) # Assign returned tuple 
+begin,end,factor=RT_estimator(rt_type)
+rt60 = np.zeros(band_centerfreqs.size)  
+    
+for band in range(band_centerfreqs.size):
+        
+        # Filtering signal w/butterworth & hilbert 
+    filtered_signal = butterworth_bandpass_filter(impulseresponse, low[band], high[band], fs, order=3)
+    abs_signal = np.abs(filtered_signal) / np.max(np.abs(filtered_signal))    
+    amplitude_envelope = np.abs(hilbert(filtered_signal)) 
+    amplitude_envelope = amplitude_envelope/np.max(amplitude_envelope)
+    envelope_plot(abs_signal, amplitude_envelope)
+        
+        # Moving Average filter
+    maIR = movingaverage(amplitude_envelope, window, band)
+
+        # Schroeder integration
+    A = np.cumsum(maIR[::-1]**2)[::-1]
+    EdB = 20.0 * np.log10(A/np.max(A))
+    # Linear regression of Schroeder curve w/ L
+    schroeder_begin = EdB[np.abs(EdB - begin).argmin()]
+    schroeder_end = EdB[np.abs(EdB - end).argmin()]
+    begin_sample = np.where(EdB == schroeder_begin)[0][0]
+    end_sample = np.where(EdB == schroeder_end)[0][0] 
+        
+    plot_reg(EdB,EdB[begin_sample],EdB[end_sample])
+        
+    L = np.arange(begin_sample, end_sample + 1) / fs
+    schroeder = EdB[begin_sample:end_sample + 1]
+    slope, intercept = stats.linregress(L, schroeder)[0:2]
+       
+        # Reverberation time
+    rt60[band]=-60/slope
+        
+
+
+#rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
+
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # EVALUATION METRIC
