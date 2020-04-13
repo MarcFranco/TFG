@@ -45,6 +45,7 @@ import scipy.signal as sig
 import soundfile as sf
 from scipy.signal import butter, lfilter, hilbert
 from scipy import stats
+from scipy.io import wavfile
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # SETUP
@@ -232,23 +233,29 @@ T = 4
 fs = 48000
 t = np.arange(0,T*fs)/fs
 
-sinesweep=log_sinesweep(finf,fsup,T,t,fs)
-sf.write('sinesweep.wav', sinesweep, fs)
-inversefilter=inverse_filter(finf,fsup,T,t,sinesweep)
-sf.write('inversefilter.wav', inversefilter, fs)
+#sinesweep=log_sinesweep(finf,fsup,T,t,fs)
+#sf.write('sinesweep.wav', sinesweep, fs)
+fs1, sinesweep = wavfile.read('C:\TFG\Codi\masp-master\sounds\Sweep.wav')
+#inversefilter=inverse_filter(finf,fsup,T,t,sinesweep)
+#sf.write('inversefilter.wav', inversefilter, fs)
+fs, inversefilter = wavfile.read('C:\TFG\Codi\masp-master\sounds\InvSweep.wav')
 delta = sig.fftconvolve(sinesweep, inversefilter)
 delta = delta/(np.abs(max(delta))) # normalization
-delta = delta[inversefilter.size-1:] # adjust length because of FFT
-sf.write('delta.wav', delta, fs)
+#delta = delta[inversefilter.size-1:] # adjust length because of FFT
+sf.write('deltaFarina.wav', delta, fs)
 
-freq, sinesweepdB = spectrumDBFS(sinesweep, fs)
+
+freq, sinesweepdB = spectrumDBFS(sinesweep, fs1)
 freq, inversefilterdB = spectrumDBFS(inversefilter, fs)
 freq, deltadB = spectrumDBFS(delta, fs)
 
-plots(sinesweep,sinesweepdB,'Logarithmic SineSweep x(t)')
-plots(inversefilter,inversefilterdB,'Inverse filter f(t)')
-plots(delta,deltadB,'Delta = x(t) * f(t)')
-plots_allSpectrum(sinesweepdB,inversefilterdB,deltadB,'Log. SineSweep','Inverse filter','Delta',freq)
+#plots(sinesweep,sinesweepdB,'Logarithmic SineSweep x(t)')
+#plots(inversefilter,inversefilterdB,'Inverse filter f(t)')
+#plots(delta,deltadB,'Delta = x(t) * f(t)')
+#plots_allSpectrum(sinesweepdB,inversefilterdB,deltadB,'Log. SineSweep','Inverse filter','Delta',freq)
+
+fs, deconvolution = wavfile.read('C:\TFG\Codi\masp-master\sounds\Sweep(x)Invsweep.wav')
+mse = np.mean((deconvolution - delta)**2)
 
 impulseresponse = mic_rirs[:,0,0] #get an Impulse Response
 sf.write('IR.wav', impulseresponse, fs)
@@ -328,12 +335,15 @@ def butterworth_bandpass_filter(data, lowcut, highcut, fs, order):
     y = lfilter(b, a, data)
     return y
 
-def envelope_plot(impulse,env):   
+def envelope_plot(impulse,env,index,centerfreqs):   
     time= np.arange(0,impulse.size)/fs
     plt.figure()
+    plt.title('Signal and Filtered of frequency band '+ repr(centerfreqs[index]) + ' Hz')
     plt.plot(time, impulse, label='Signal')
     plt.plot(time, env, label='Envelope')
     plt.xlabel("Time [s]")
+    plt.ylabel('Amplitude')
+    plt.grid()
     plt.legend()
 
 def movingaverage (values, M, index):
@@ -359,20 +369,27 @@ def maf_plot(weights):
     plt.xlabel('Frequency [rad/sample]')
     plt.show()
     
-def plot_reg(EdB,begin_sample,end_sample):
-    plt.figure()
-    #a=np.zeros(EdB.size)  
-    #a[begin_sample:begin_sample+1] = [EdB[begin_sample]]  
-    #b=np.zeros(EdB.size)  
-    #b[end_sample:end_sample+1] = [EdB[end_sample]]
-    markers_on = [begin_sample, end_sample]
-    plt.plot(EdB, '-gD', markevery=markers_on)
-    plt.ylabel('dB')
+def plot_schroeder(EdB,begin_sample,end_sample,index,centerfreqs):
+    plt.figure()    
+    marker_begin = [begin_sample]
+    marker_end = [begin_sample, end_sample]
+    plt.title('Schroeder Integral of frequency band ' + repr(centerfreqs[index])  + ' Hz')
+    plt.plot(EdB,'-bo',markevery=marker_begin, label=repr(round(EdB[begin_sample]))+' dB')
+    plt.plot(EdB,'-bo',markevery=marker_end, label=repr(round(EdB[end_sample]))+' dB')
+    plt.plot(EdB,'-r',label='Schroeder dB')
+    plt.ylabel('Level [dB]')
     plt.xlabel('Samples')
+    plt.grid()
+    plt.legend()
     plt.show()
     
+def print_rt60(rt60,centerfreqs):   
+    print('----Reverberation Time (RT60)----')
+    for i in range (0,rt60.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(rt60[i]) )
+       
 def revTime60(data,band_centerfreqs,window,rt_type,oct_type):    
-    band_type, low, high = check_type(oct_type,band_centerfreqs) # Assign returned tuple 
+    band_type, low, high = check_type(oct_type,band_centerfreqs) 
     begin,end,factor=RT_estimator(rt_type)
     rt60 = np.zeros(band_centerfreqs.size)  
     
@@ -383,7 +400,7 @@ def revTime60(data,band_centerfreqs,window,rt_type,oct_type):
         abs_signal = np.abs(filtered_signal) / np.max(np.abs(filtered_signal))    
         amplitude_envelope = np.abs(hilbert(filtered_signal)) 
         amplitude_envelope = amplitude_envelope/np.max(amplitude_envelope)
-        envelope_plot(abs_signal, amplitude_envelope)
+        envelope_plot(abs_signal,amplitude_envelope,band,band_centerfreqs)
         
         # Moving Average filter
         maIR = movingaverage(amplitude_envelope, window, band)
@@ -397,7 +414,7 @@ def revTime60(data,band_centerfreqs,window,rt_type,oct_type):
         begin_sample = np.where(EdB == schroeder_begin)[0][0]
         end_sample = np.where(EdB == schroeder_end)[0][0] 
         
-        plot_reg(EdB,begin_sample,end_sample)
+        plot_schroeder(EdB,begin_sample,end_sample,band,band_centerfreqs)
         
         L = np.arange(begin_sample, end_sample + 1) / fs
         schroeder = EdB[begin_sample:end_sample + 1]
@@ -408,60 +425,185 @@ def revTime60(data,band_centerfreqs,window,rt_type,oct_type):
         
     return rt60
 
-#window=5001
-#rt_type='rt30'
-#oct_type='third'
-#rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
-#rt60_estimationIR = revTime60(estimationIR,band_centerfreqs,window,rt_type,oct_type)
-
-
 window=5001
 rt_type='rt30'
 oct_type='third'
-band_type, low, high = check_type(oct_type,band_centerfreqs) # Assign returned tuple 
-begin,end,factor=RT_estimator(rt_type)
-rt60 = np.zeros(band_centerfreqs.size)  
-    
-for band in range(band_centerfreqs.size):
-        
-        # Filtering signal w/butterworth & hilbert 
-    filtered_signal = butterworth_bandpass_filter(impulseresponse, low[band], high[band], fs, order=3)
-    abs_signal = np.abs(filtered_signal) / np.max(np.abs(filtered_signal))    
-    amplitude_envelope = np.abs(hilbert(filtered_signal)) 
-    amplitude_envelope = amplitude_envelope/np.max(amplitude_envelope)
-    envelope_plot(abs_signal, amplitude_envelope)
-        
-        # Moving Average filter
-    maIR = movingaverage(amplitude_envelope, window, band)
+rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
+print_rt60(rt60_impulseresponse,band_centerfreqs)
+rt60_estimationIR = revTime60(estimationIR,band_centerfreqs,window,rt_type,oct_type)
+print_rt60(rt60_estimationIR,band_centerfreqs)
 
-        # Schroeder integration
-    A = np.cumsum(maIR[::-1]**2)[::-1]
-    EdB = 20.0 * np.log10(A/np.max(A))
-    # Linear regression of Schroeder curve w/ L
-    schroeder_begin = EdB[np.abs(EdB - begin).argmin()]
-    schroeder_end = EdB[np.abs(EdB - end).argmin()]
-    begin_sample = np.where(EdB == schroeder_begin)[0][0]
-    end_sample = np.where(EdB == schroeder_end)[0][0] 
-        
-    plot_reg(EdB,EdB[begin_sample],EdB[end_sample])
-        
-    L = np.arange(begin_sample, end_sample + 1) / fs
-    schroeder = EdB[begin_sample:end_sample + 1]
-    slope, intercept = stats.linregress(L, schroeder)[0:2]
-       
-        # Reverberation time
-    rt60[band]=-60/slope
-        
+# Bass Ratio (BR) Objective: 0.9 - 1
+def bass_ratio(rt60): 
+    BR = (rt60[0] + rt60[1])/(rt60[2]+rt60[3]) 
+    print ("Bass Ratio (BR): " + str('%.3f'%BR))
+    return BR
 
+# Brightness (Br) Objective: >0.80 
+def brightness(rt60): 
+    Br = (rt60[4] + rt60[5])/(rt60[2]+rt60[3]) 
+    print ("Brightness (Br): " + str('%.3f'%Br))
+    return Br
 
-#rt60_impulseresponse = revTime60(impulseresponse,band_centerfreqs,window,rt_type,oct_type)
-
-
+bassRatio_impulse=bass_ratio(rt60_impulseresponse)
+bassRatio_estimationIR=bass_ratio(rt60_estimationIR)
+brightness_impulse=brightness(rt60_impulseresponse)
+brightness_estimationIR=brightness(rt60_estimationIR)
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # EVALUATION METRIC
+
 mse = np.mean((impulseresponse - estimationIR)**2)
 rmse=math.sqrt (mse)
 
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+def print_c50(c50,centerfreqs):   
+    print('----Speech Clarity (C50)----')
+    for i in range (0,c50.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(c50[i]) )
+
+ # Speech Clarity (C50) Objective: >2dB
+def speechClarity50(data,band_centerfreqs,oct_type):    
+    band_type, low, high = check_type(oct_type,band_centerfreqs) 
+    C50 = np.zeros(band_centerfreqs.size)  
+
+    for band in range(band_centerfreqs.size):
+        filtered_signal = butterworth_bandpass_filter(data, low[band], high[band], fs, order=3)
+        p2 = filtered_signal**2.0
+        t = int(0.05*fs)
+        C50[band] = 10.0 * np.log10((np.sum(p2[:t]) / np.sum(p2[t:])))
+    return C50
+
+oct_type='third'
+c50_impulseresponse=speechClarity50(impulseresponse,band_centerfreqs,oct_type)
+print_c50(c50_impulseresponse,band_centerfreqs)
+c50_estimationIR=speechClarity50(estimationIR,band_centerfreqs,oct_type)
+print_c50(c50_estimationIR,band_centerfreqs)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+def print_d50(d50,centerfreqs):   
+    print('----Definition (D50)----')
+    for i in range (0,d50.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(d50[i]) )
+        
+# Definition (D50) Objective: 0.4 - 0.6
+def Definition(C50,band_centerfreqs):    
+    D50 = np.zeros(band_centerfreqs.size)  
+    for band in range(band_centerfreqs.size):
+        D50[band] = 1 / (1 + 10**-(C50[band]/10)) 
+    return D50
+
+d50_impulseresponse=Definition(c50_impulseresponse,band_centerfreqs)
+print_d50(d50_impulseresponse,band_centerfreqs)
+d50_estimationIR=Definition(c50_estimationIR,band_centerfreqs)
+print_d50(d50_estimationIR,band_centerfreqs)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+def print_Smid(Smid,centerfreqs):   
+    print('----Speech Sound Level (Smid)----')
+    for i in range (0,Smid.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(Smid[i]) )
+
+# Strength (S)  Objective: (4 <= Smid(0º) <= 8) and (2 <= Smid(90º) <= 6)
+def SpeechSoundLevel(data,Lw,band_centerfreqs,oct_type):
+    
+    band_type, low, high = check_type(oct_type,band_centerfreqs) 
+    Smid = np.zeros(band_centerfreqs.size)  
+    LpE10m = Lw-31
+
+    for band in range(band_centerfreqs.size):    
+        filtered_signal = butterworth_bandpass_filter(data, low[band], high[band], fs, order=3)
+        p2 = filtered_signal**2.0        
+        LpElistener = 10.0*np.log10(np.sum(p2))     
+        Smid[band] = LpElistener - LpE10m
+    return Smid
+
+Lw = 94
+oct_type='third'
+Smid_impulseresponse=SpeechSoundLevel(impulseresponse,Lw,band_centerfreqs,oct_type)
+print_Smid(Smid_impulseresponse,band_centerfreqs)
+Smid_estimationIR=SpeechSoundLevel(estimationIR,Lw,band_centerfreqs,oct_type)
+print_Smid(Smid_estimationIR,band_centerfreqs)
+
+# %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+# Function to compute the Surface of a room
+def compute_surface(width,height,depth): 
+    # Assuming there are no windows and door. In that case substract the S from it
+    # and sum the S to the total S. 
+    s_Ceiling = width * depth
+    s_Floor = width * depth
+    s_FrontWall = width * height 
+    s_BackWall = width * height 
+    s_RightWall = depth * height
+    s_LeftWall = depth * height
+    surface= [s_Ceiling,s_Floor,s_FrontWall,s_BackWall,s_RightWall,s_LeftWall]
+    S = s_Ceiling + s_Floor + s_FrontWall + s_BackWall + s_RightWall + s_LeftWall 
+    return surface,S
+
+# Function to compute the Sound Absorption Coefficient for each frequency band
+def Absorption_Coefficient(nBands,surface,S,abs_coef):
+    alpha = []
+    for a in range (0,nBands):
+        alpha_band = np.dot(surface,abs_coef[:,a])/S 
+        alpha.append(alpha_band)
+    return alpha
+
+# Function to compute the Room Constant (R)
+def Room_Constant(S,alpha,nBands):
+    R=[]
+    for d in range (0,nBands):
+        ct_room=(S*alpha[d])/(1-alpha[d])
+        R.append(ct_room)
+    return R
+
+# Function to compute the Critical Distance
+def Critical_Distance(nBands,Q,S,alpha,centerfreqs):
+    Dc=[]
+    R=Room_Constant(S,alpha,nBands)
+    print('----Critical Distance----')
+    for k in range (0,nBands):
+        cd=math.sqrt((Q*R[k])/(16*math.pi))
+        Dc.append(cd)
+        print (repr(centerfreqs[k]) + 'Hz : ' + str(Dc[k])) 
+    return Dc
+
+# Compute the distance between the source and the receiver
+def Distance_sr(src,rec):
+    r=[]
+    for x in range (0,len(src)):
+        distance = math.sqrt((src[x,0]-rec[0,0])**2 + (src[x,1]-rec[0,1])**2 + (src[x,2]-rec[0,2])**2)
+        r.append(distance)
+    return r
+
+def print_ALCons(ALCons,centerfreqs):   
+    print('----Percentage Articulation Loss of Consonants (%ALCons)----')
+    for i in range (0,ALCons.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(ALCons[i]) )
+
+# Articulation Loss of Consonants (%ALCons) Objective: 0 - 7%
+def ALCons(r,rt60,V,Q,Dc,band_centerfreqs):
+    
+    Cons = np.zeros(band_centerfreqs.size) 
+    
+    for band in range(band_centerfreqs.size): 
+        if r<=3.16*Dc[band]:
+            Cons[band] = (200*(r**2)*(rt60[band]**2))/(V*Q)
+        else:
+            Cons[band] = 9*rt60[band]
+    return Cons
+
+surface,S=compute_surface(width,height,depth)
+abs_coef = np.matrix([[0.57,0.39,0.41,0.82,0.89,0.72],[0.2,0.15,0.12,0.1,0.1,0.07],[0.01,0.01,0.02,0.03,0.04,0.05],[0.01,0.01,0.02,0.03,0.04,0.05],[0.01,0.01,0.02,0.03,0.04,0.05],[0.01,0.01,0.02,0.03,0.04,0.05]])
+alpha=Absorption_Coefficient(nBands,surface,S,abs_coef)
+r = Distance_sr(src,rec)
+V = room[0] * room[1] * room[2] # Volume of the class
+Q = 2 # Directivity Factor for speech in a class
+Dc=Critical_Distance(nBands,Q,S,alpha,band_centerfreqs)
+ALCons_impulseresponse=ALCons(r[0],rt60_impulseresponse,V,Q,Dc,band_centerfreqs)
+print_ALCons(ALCons_impulseresponse,band_centerfreqs)
+ALCons_estimationIR=ALCons(r[0],rt60_estimationIR,V,Q,Dc,band_centerfreqs)
+print_ALCons(ALCons_estimationIR,band_centerfreqs)
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # FUNCTIONS TO COMPUTE THE ACOUSTIC PARAMETERS
 
