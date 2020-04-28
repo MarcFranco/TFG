@@ -539,11 +539,9 @@ Smid_impulseresponse=SpeechSoundLevel(impulseresponse,Lw,band_centerfreqs,oct_ty
 print_Smid(Smid_impulseresponse,band_centerfreqs)
 Smid_estimationIR=SpeechSoundLevel(estimationIR,Lw,band_centerfreqs,oct_type)
 print_Smid(Smid_estimationIR,band_centerfreqs)
-
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-# Ambisonics
-
+ 
 # Encode Audio to Ambisonics
 def encode_bFormat(audio,azimuth,elevation):
     W = audio/np.sqrt(2) #Omnidirectional microphone (pressure)
@@ -561,31 +559,15 @@ def encode_bFormat(audio,azimuth,elevation):
 def write_bFormat(output_filename,audioBFormat,fs):    
     sf.write(output_filename, audioBFormat, fs)
     return audioBFormat
-
-
-def plotSpectrogram(title, x, colorMap, xlabel, ylabel, barlabel, minValue, maxValue):
-    plt.figure()
-    plt.suptitle(title)
-    plt.pcolormesh(np.abs(x), cmap = colorMap, vmin = minValue, vmax = maxValue)    
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
-    cbar = plt.colorbar()
-    cbar.ax.set_ylabel(barlabel)      
-  
-def cartesian_spherical(x):
-    r= np.sqrt(x[0,:,:]**2 + x[1,:,:]**2 + x[2,:,:]**2)
-    azimuth=np.arctan(x[1,:,:]/x[0,:,:])
-    elevation=np.arctan(x[2,:,:]/r)
-    return r,azimuth,elevation
-
-def compute_stft(audioBFormat,fs,win_type,win_length):
-    for x in range(0,len(audioBFormat[1])):
-        f, t, frequencydomain = sig.stft(audioBFormat[:,0], fs, win_type, win_length)
+   
+def compute_stft(audioBFormat,fs,win_type,win_length):    
+    for x in range(0,len(audioBFormat[1])):       
+        f,t,Zxx = sig.stft(audioBFormat[:,x], fs, win_type, win_length)
         if x == 0: #Initialize the variable stft
-            audioBFormat_stft = np.empty([len(audioBFormat[1]),f.size,t.size],dtype=np.complex128)    
-        audioBFormat_stft[x,:,:] = frequencydomain
-    return f,t,audioBFormat_stft
-
+            stft = np.empty([len(audioBFormat[1]),f.size,t.size],dtype=np.complex128)    
+        stft[x,:,:] = Zxx
+    return f, t, stft
+    
 def sound_pressure(audioBFormat_stft):
     P = audioBFormat_stft[0,:,:]    
     return P
@@ -607,7 +589,7 @@ def intensity_vector_bFormat(audioBFormat_stft,f,t,p0,c):
     I = np.empty((len(audioBFormat_stft[:,1,1])-1,f.size,t.size))
     I = -(1/(2*np.sqrt(2)*Z0))*np.real(audioBFormat_stft[0,:,:] * np.conj(np.transpose(audioBFormat_stft[1:,:,:], (0, 1, 2))))
     return I
-    
+
 def direction_of_incidence(I,f,t):    
     DOA = np.empty((len(I[:,1,1]),f.size,t.size))    
     DOA[0:,:,:] = -(np.divide(I[0:,:,:], np.linalg.norm(I, ord=2, axis=0))) 
@@ -618,6 +600,12 @@ def direction_of_incidence_bFormat(I,f,t):
     DOA[0:,:,:] = (np.divide(np.real(audioBFormat_stft[0,:,:] * np.conj(np.transpose(audioBFormat_stft[1:,:,:], (0, 1, 2)))), np.linalg.norm(np.real(audioBFormat_stft[0,:,:] * np.conj(np.transpose(audioBFormat_stft[1:,:,:], (0, 1, 2)))), ord=2, axis=0))) 
     return DOA
 
+def cartesian_spherical(x):
+    r= np.sqrt(x[0,:,:]**2 + x[1,:,:]**2 + x[2,:,:]**2)
+    azimuth=np.arctan2(x[1,:,:],x[0,:,:])
+    elevation=np.arcsin(x[2,:,:]/r)
+    return r,azimuth,elevation
+
 def energy_density(audioBFormat_stft,p0,c):
     P = sound_pressure(audioBFormat_stft)
     U = particle_velocity(audioBFormat_stft,p0,c)
@@ -627,7 +615,7 @@ def energy_density(audioBFormat_stft,p0,c):
 def energy_density_bFormat(audioBFormat_stft,p0,c):
     energy = (1/(4*p0*np.power(c,2)))*((np.power(np.linalg.norm(np.transpose(audioBFormat_stft[1:,:,:], (0, 1, 2)), ord=2, axis=0),2)/2)+(np.power(abs(audioBFormat_stft[0,:,:]),2)))
     return energy
-    
+
 def Diffuseness(I,energy,f,t,dt):
     diffuseness = np.empty((f.size, t.size))
 
@@ -639,139 +627,76 @@ def Diffuseness(I,energy,f,t,dt):
             # Borders: copy neighbor values
             diffuseness[k, 0:int(dt/2)] = diffuseness[k, int(dt/2)]        
             diffuseness[k, int(t.size - dt / 2):t.size] = diffuseness[k, t.size - int(dt/2) - 1]
-            return diffuseness
-def plotHist2D(azi, ele, diffuseness, threshold, title, xlabel, ylabel, barLabel, path):
-    
+    return diffuseness
+
+def plotSpectrogram(title, x, colorMap, xlabel, ylabel, barlabel, minValue, maxValue):
     plt.figure()
     plt.suptitle(title)
-    i=0
-    azimuth = np.empty(1)
-    elevation = np.empty(1)
-    for x in range(np.shape(azi)[0]):
-        for y in range(np.shape(azi)[1]):
-            if i == 0:
-                azimuth[i] = azi[x,y]
-                elevation[i] = ele[x,y]
-                i = i+1
-            else:
-                azimuth = np.append(azimuth ,azi[x,y])
-                elevation = np.append(elevation, ele[x,y])
-                i = i+1
-                
-    plt.hist2d(azimuth, elevation, bins= [360, 180])
-    # Plot 2D histogram using pcolor
-    
-    plt.figure()
-    plt.suptitle(title)
-    nbins = [360, 180]
-    H, xedges, yedges = np.histogram2d(azimuth,elevation,bins=nbins)
-     
-    # H needs to be rotated and flipped
-    H = np.rot90(H)
-    H = np.flipud(H)
-     
-    # Mask zeros
-    Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
-     
-    # Plot 2D histogram using pcolor
-    plt.pcolormesh(xedges,yedges,Hmasked)
+    plt.pcolormesh(np.abs(x), cmap = colorMap, vmin = minValue, vmax = maxValue)    
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     cbar = plt.colorbar()
-    cbar.ax.set_ylabel(barLabel)
-                
-fs, mono_audio = wavfile.read('C:\TFG\Codi\masp-master\sounds\medieval.wav')
-az = np.pi/2 
-el = 0
-W,X,Y,Z,audioBFormat = encode_bFormat(mono_audio,az,el)
+    cbar.ax.set_ylabel(barlabel)
+    
+def plotRadians(title,x,xlabel,ylabel,vmin,vmax):
+    plt.figure()
+    plt.suptitle(title)
+    plt.plot(x)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.ylim(vmin,vmax)
+    plt.grid()
 
-win_type='hann'
-win_length=256
-f,t,audioBFormat_stft=compute_stft(audioBFormat,fs,win_type,win_length)
+    
+def plotReflection(azimuth, elevation, title, xlabel, ylabel,xvmin,xvmax,yvmin,yvmax):
+    az = np.empty(1)
+    el = np.empty(1)    
+    az = azimuth.flatten() 
+    el = elevation.flatten()                         
+    plt.figure()
+    plt.suptitle(title)   
+    plt.plot(az,el,'-o')    
+    plt.xlabel(xlabel)
+    plt.xlim(xvmin,xvmax)
+    plt.ylabel(ylabel)
+    plt.ylim(yvmin,yvmax)
+    plt.grid()
+
+
+fs, mono_audio = wavfile.read('C:\TFG\Codi\masp-master\sounds\medieval.wav')
+az = -np.pi 
+el = 0
+W,X,Y,Z,audioBFormat = encode_bFormat(mono_audio,az,el)  
+win_type = 'hann'
+win_length = 256
+f,t,audioBFormat_stft = compute_stft(audioBFormat,fs,win_type,win_length)
 
 c = 346.13  # m/s
 p0 = 1.1839 # kg/m3
-I=intensity_vector(audioBFormat_stft,f,t,p0,c)
-#IbFormat=intensity_vector_bFormat(audioBFormat_stft,f,t,p0,c)
+P = sound_pressure(audioBFormat_stft)
+U = particle_velocity(audioBFormat_stft,p0,c)
+I = intensity_vector(audioBFormat_stft,f,t,p0,c)
+IbFormat = intensity_vector_bFormat(audioBFormat_stft,f,t,p0,c)
 
-DOA=direction_of_incidence(I,f,t)
-#DOAbFormat=direction_of_incidence_bFormat(I,f,t)
+DOA = direction_of_incidence(I,f,t)
+DOAbFormat = direction_of_incidence_bFormat(I,f,t)
 
-r,azimuth,elevation=cartesian_spherical(DOA)
+r,azimuth,elevation = cartesian_spherical(DOA) 
+plotSpectrogram('Azimuth', azimuth, 'plasma','Time', 'Frequency', 'Azimuth', -np.pi, np.pi)
+plotSpectrogram('Elevation', elevation, 'plasma','Time', 'Frequency', 'Elevation',-np.pi/2, np.pi/2)
+#plotRadians('Azimuth', azimuth, 'Time', 'Angle [rad]',-4, 4)
+#plotRadians('Elevation', elevation, 'Time', 'Angle [rad]',-2, 2)
+plotReflection(azimuth, elevation, 'Reflection Direction','Azimuth', 'Elevation',-4,4,-2,2)
 
-#plotSpectrogram('Azimuth', azimuth, 'plasma','Time', 'Frequency', 'Azimuth', None, None)
-#plotSpectrogram('Elevation', elevation, 'plasma','Time', 'Frequency', 'Elevation',None, None)
-    
 energy = energy_density(audioBFormat_stft,p0,c)
-#energybFormat = energy_density_bFormat(audioBFormat_stft,p0,c)
+energybFormat = energy_density_bFormat(audioBFormat_stft,p0,c)
 
-dt=10
-diffuseness=Diffuseness(I,energy,f,t,dt)   
+dt = 10
+diffuseness = Diffuseness(I,energy,f,t,dt) 
+plotSpectrogram('Diffuseness', diffuseness, 'plasma','Time', 'Energy', 'Diffuseness',0,1)
 
-#azimuth1 = azimuth.flatten()
-#elevation1 = elevation.flatten()
-
-#plt.figure()
-#plt.suptitle('Azimuth')
-#plt.plot(azimuth1)
-#plt.ylim(-np.pi, np.pi)
-#plt.xlabel('Time [samples]')
-#plt.ylabel('Degree [Radians]')
-#plt.show()
-
-#plt.figure()
-#plt.suptitle('Elevation')
-#plt.plot(elevation)
-#plt.ylim(-np.pi/2, np.pi/2)
-#plt.xlabel('Time [samples]')
-#plt.ylabel('Degree [Radians]')
-#plt.show()
-
-#plotSpectrogram('Diffuseness', diffuseness, 'cividis','Time', 'Frequency', 'Diffuseness',None,None)
-
-#plotHist2D(azimuth, elevation, diffuseness,'DoA Histogram', 'Azimuth', 'Elevation', 'Number Samples') 
-
-#plt.figure()
-#plt.suptitle('DoA Histogram')
-#i=0
-#azimuth1 = np.empty(1)
-#elevation1 = np.empty(1)
-#for x in range(np.shape(azimuth)[0]):
-#    for y in range(np.shape(azimuth)[1]):
-#        if i == 0:
-#            azimuth1[i] = azimuth[x,y]
-#            elevation1[i] = elevation[x,y]
-#            i = i+1
-#        else:
-#            azimuth1 = np.append(azimuth1 ,azimuth[x,y])
-#            elevation1 = np.append(elevation1, elevation[x,y])
-#            i = i+1
-                
-#plt.hist2d(azimuth1, elevation1, bins= [360, 180])
-    # Plot 2D histogram using pcolor
-    
-#plt.figure()
-#plt.suptitle('DoA Histogram')
-#nbins = [360, 180]
-#H, xedges, yedges = np.histogram2d(azimuth1,elevation1,bins=nbins)
-     
-    # H needs to be rotated and flipped
-#H = np.rot90(H)
-#H = np.flipud(H)
-     
-    # Mask zeros
-#Hmasked = np.ma.masked_where(H==0,H) # Mask pixels with a value of zero
-     
-    # Plot 2D histogram using pcolor
-#plt.pcolormesh(xedges,yedges,Hmasked)
-#plt.xlabel('Azimuth')
-#plt.ylabel('Elevation')
-#cbar = plt.colorbar()
-#cbar.ax.set_ylabel('Number Samples')
-
-
-#output_filename='medievalBFormat.wav'
-#audioBFormat=write_bFormat(output_filename,audioBFormat,fs)
+output_filename='medievalBFormat.wav'
+audioBFormat=write_bFormat(output_filename,audioBFormat,fs)
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
