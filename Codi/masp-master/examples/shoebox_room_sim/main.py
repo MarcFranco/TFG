@@ -18,12 +18,13 @@ import sys
 sys.path.append("C:\TFG\Codi\masp-master\examples\shoebox_room_sim")
 from functions import (log_sinesweep,inverse_filter,spectrumDBFS,plots,
 plots_allSpectrum,revTime60,bass_ratio,brightness,speechClarity50,
-Definition, SpeechSoundLevel,compute_surface,
+Definition, SpeechSoundLevel,compute_surface,number_channels,
 Absorption_Coefficient,Distance_sr,Critical_Distance,ALCons,Parametric_Reverberation_Time,
 NoiseCriteria,convolution_audio_IRambisonics,compute_stft,sound_pressure,particle_velocity,
-intensity_vector,intensity_vector_bFormat,direction_of_incidence,
-direction_of_incidence_bFormat,cartesian_spherical,energy_density,
-energy_density_bFormat,Diffuseness,write_bFormat,plotSpectrogram,plotReflection,plotRadians)
+intensity_vector,intensity_vector_bFormat,direction_of_incidence, musicClarity80,
+direction_of_incidence_bFormat,cartesian_spherical,energy_density,normalisation_standard,
+energy_density_bFormat,Diffuseness,write_bFormat,plotSpectrogram,plotReflection,
+plotRadians,apply_normalisation,channel_ordering,convolve_IR)
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # SETUP
@@ -212,6 +213,10 @@ brightness_estimationIR=brightness(rt60_estimationIR)
 c50_impulseresponse=speechClarity50(impulseresponse,band_centerfreqs,oct_type,fs)
 c50_estimationIR=speechClarity50(estimationIR,band_centerfreqs,oct_type,fs)
 
+c80_impulseresponse=musicClarity80(impulseresponse,band_centerfreqs,oct_type,fs)
+c80_estimationIR=musicClarity80(estimationIR,band_centerfreqs,oct_type,fs)
+
+
 d50_impulseresponse=Definition(c50_impulseresponse,band_centerfreqs)
 d50_estimationIR=Definition(c50_estimationIR,band_centerfreqs)
 
@@ -254,6 +259,7 @@ abs_echograms = srs.compute_echograms_sh(room, src, rec, abs_wall, limits, rec_o
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # RENDERING
 
+fs = 48000
 # In this case all the information (e.g. SH directivities) are already
 # encoded in the echograms, hence they are rendered directly to discrete RIRs
 sh_rirs = srs.render_rirs_sh(abs_echograms, band_centerfreqs, fs)
@@ -277,13 +283,22 @@ sh_sigs = srs.apply_source_signals_sh(sh_rirs, src_sigs)
 fs, mono_audio = wavfile.read('C:\TFG\Codi\masp-master\sounds\medieval.wav')
 az = -np.pi 
 el = 0
-#W,X,Y,Z,audioBFormat = encode_bFormat(mono_audio,az,el)  
-audioBFormat= convolution_audio_IRambisonics(mono_audio,sh_rirs)
+ambisonicsOrder = 1
+fs, ir_university = wavfile.read('C:\TFG\Codi\masp-master\sounds\ir_centre_stalls.wav')
 
+#audioBFormat=convolution_audio_IRambisonics(mono_audio,sh_rirs)
+#audioBFormat=convolution_audio_IRambisonics(mono_audio,ir_university)
+audioBFormat=convolve_IR(mono_audio,ir_university)
+channelOrder='ACN'
+audioBFormat_ordered=channel_ordering(channelOrder,audioBFormat[:,0],audioBFormat[:,1],audioBFormat[:,2],audioBFormat[:,3])
+norm_type='maxN'
+norm=normalisation_standard(ambisonicsOrder,norm_type)
+audioBFormat_normalized=apply_normalisation(norm,audioBFormat_ordered[:,0],audioBFormat_ordered[:,1],audioBFormat_ordered[:,2],audioBFormat_ordered[:,3])
+#W,X,Y,Z,audioBFormat = encode_bFormat(mono_audio,az,el,norm)  
 
 win_type = 'hann'
 win_length = 256
-f,t,audioBFormat_stft = compute_stft(audioBFormat,fs,win_type,win_length)
+f,t,audioBFormat_stft = compute_stft(audioBFormat_normalized,fs,win_type,win_length)
 
 p0 = 1.1839 # kg/m3
 P = sound_pressure(audioBFormat_stft)

@@ -274,6 +274,25 @@ def speechClarity50(data,band_centerfreqs,oct_type,fs):
     print_c50(C50,band_centerfreqs)
     return C50
 
+
+def print_c80(c80,centerfreqs):   
+    print('----Music Clarity (C80)----')
+    for i in range (0,c80.size):
+        print(repr(centerfreqs[i]) +'Hz : ' + repr(c80[i]) )
+        
+ # Music Clarity (C80) Objective: >2dB
+def musicClarity80(data,band_centerfreqs,oct_type,fs):    
+    band_type, low, high = check_type(oct_type,band_centerfreqs) 
+    C80 = np.zeros(band_centerfreqs.size)  
+
+    for band in range(band_centerfreqs.size):
+        filtered_signal = butterworth_bandpass_filter(data, low[band], high[band], fs, order=3)
+        p2 = filtered_signal**2.0
+        t = int(0.08*fs)
+        C80[band] = 10.0 * np.log10((np.sum(p2[:t]) / np.sum(p2[t:])))
+    print_c80(C80,band_centerfreqs)
+    return C80
+
 def print_d50(d50,centerfreqs):   
     print('----Definition (D50)----')
     for i in range (0,d50.size):
@@ -430,12 +449,60 @@ def NoiseCriteria(oct_levels):
 #                                           #
 # # # # # # # # # # # # # # # # # # # # # # # 
  
+def channel_ordering(channelOrder,W,X,Y,Z):
+    if channelOrder=='FUMA':
+        audioBFormat_ordered = np.vstack((W,X,Y,Z))    
+    elif channelOrder=='ACN':
+        audioBFormat_ordered = np.vstack((W,Y,Z,X))        
+    audioBFormat_ordered = np.transpose(audioBFormat_ordered)
+    return audioBFormat_ordered 
+
+def number_channels(ambisonicsOrder):
+    numChannels=np.power(ambisonicsOrder+1,2)
+    return numChannels
+
+def normalisation_standard(ambisonicsOrder,norm):
+    
+    numChannels=number_channels(ambisonicsOrder)
+    normalisationFactor = np.zeros(numChannels)
+    index = 0
+    
+    for l in range (0,ambisonicsOrder+1):
+        for m in range (-l,l+1):
+            if norm == 'N3D':
+                normalisationFactor[index] = math.sqrt(2*l + 1)                 
+            elif norm == 'maxN':
+                if l == 0:
+                    normalisationFactor[index] = 1/math.sqrt(2)
+                else:
+                    normalisationFactor[index] = 1        
+            elif norm == 'SN3D':
+                if m == 0:
+                    d=1
+                else:
+                    d=0
+                normalisationFactor[index] = math.sqrt((2-d)*(math.factorial(l-abs(m))/math.factorial(l+abs(m))))           
+            index += 1
+    return normalisationFactor
+
+def apply_normalisation(norm,W,X,Y,Z):
+    Wnormalized = W*norm[0] 
+    Xnormalized = X*norm[1] 
+    Ynormalized = Y*norm[2]
+    Znormalized = Z*norm[3]
+    
+    audioBFormat_normalized = np.vstack((Wnormalized,Xnormalized,Ynormalized,Znormalized))
+    audioBFormat_normalized = np.transpose(audioBFormat_normalized)
+    audioBFormat_normalized=audioBFormat_normalized/np.max(audioBFormat_normalized)
+    
+    return audioBFormat_normalized
+            
 # Encode Audio to Ambisonics
-def encode_bFormat(audio,azimuth,elevation):
-    W = audio/np.sqrt(2) #Omnidirectional microphone (pressure)
-    X = audio*math.cos(azimuth)*math.cos(elevation) #Figure-of-eight microphonesne (acoustic velocity components)
-    Y = audio*math.sin(azimuth)*math.cos(elevation)
-    Z = audio*math.sin(elevation) 
+def encode_bFormat(audio,azimuth,elevation,norm):
+    W = audio*norm[0] #Omnidirectional microphone (pressure)
+    X = audio*math.cos(azimuth)*math.cos(elevation)*norm[1] #Figure-of-eight microphonesne (acoustic velocity components)
+    Y = audio*math.sin(azimuth)*math.cos(elevation)*norm[2]
+    Z = audio*math.sin(elevation)*norm[3]
     
     audioBFormat = np.vstack((W,X,Y,Z))
     audioBFormat = np.transpose(audioBFormat)
@@ -564,3 +631,16 @@ def convolution_audio_IRambisonics(mono_audio,sh_rirs):
             convolved = np.empty((array.size,sh_rirs[0,:,0,0].size))    
         convolved[:,i] = array
     return convolved
+
+def convolve_IR(data, IR):
+    W = np.convolve(data, IR[:,0])
+    X = np.convolve(data, IR[:,1])
+    Y = np.convolve(data, IR[:,2])
+    Z = np.convolve(data, IR[:,3]) 
+    
+    audioBFormat = np.vstack((W,X,Y,Z))
+    audioBFormat = np.transpose(audioBFormat)
+    audioBFormat=audioBFormat/np.max(audioBFormat)
+    
+    return audioBFormat
+
