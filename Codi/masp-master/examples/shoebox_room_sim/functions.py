@@ -443,6 +443,21 @@ def NoiseCriteria(oct_levels):
     print ("NC "+str(nc))
     return nc
 
+def roomModes(length,width,height,numNodes,c):
+    index=0
+    mode=np.zeros((numNodes*numNodes*numNodes,4))
+    
+    for k in range(0,numNodes):
+        for m in range(0,numNodes):
+            for n in range(0,numNodes):
+                freq = (c/2)* math.sqrt((k/length)**2 + (m/width)**2 + (n/height)**2)
+                mode[index,0]=k
+                mode[index,1]=m
+                mode[index,2]=n
+                mode[index,3]=freq
+                index += 1
+    return mode
+
 # # # # # # # # # # # # # # # # # # # # # # # 
 #                                           #
 #     Directional Audio Coding (DirAC)      #

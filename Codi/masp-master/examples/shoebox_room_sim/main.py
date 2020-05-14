@@ -18,7 +18,7 @@ import sys
 sys.path.append("C:\TFG\Codi\masp-master\examples\shoebox_room_sim")
 from functions import (log_sinesweep,inverse_filter,spectrumDBFS,plots,
 plots_allSpectrum,revTime60,bass_ratio,brightness,speechClarity50,
-Definition, SpeechSoundLevel,compute_surface,number_channels,
+Definition, SpeechSoundLevel,compute_surface,roomModes,
 Absorption_Coefficient,Distance_sr,Critical_Distance,ALCons,Parametric_Reverberation_Time,
 NoiseCriteria,convolution_audio_IRambisonics,compute_stft,sound_pressure,particle_velocity,
 intensity_vector,intensity_vector_bFormat,direction_of_incidence, musicClarity80,
@@ -239,6 +239,9 @@ ALCons_estimationIR=ALCons(r[0],rt60_estimationIR,V,Q,Dc,band_centerfreqs)
 
 oct_levels=[74.1, 76.3, 68.9, 59.6, 49.3, 42.9, 41.0, 35.8] #Measured Values
 nc=NoiseCriteria(oct_levels)
+
+numNodes = 2
+modes=roomModes(depth,width,height,numNodes,c)
 
 # %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 # SH orders for receivers
