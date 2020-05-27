@@ -1,0 +1,64 @@
+
+Format(s): 
+B-Format (4 Channel Files)
+
+B-Format: Multichannel: 
+
+    ir_centre_stalls.wav
+
+Sample Rate: 96 kHz
+Number of Channels: 4
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: wav
+
+
+    ir_row_1c_sl_front.wav
+
+Sample Rate: 96 kHz
+Number of Channels: 4
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: wav
+
+
+    ir_row_1l_sl_centre.wav
+
+Sample Rate: 44.1 kHz
+Number of Channels: 2
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: mp1
+
+
+    ir_row_2l_diagonal_mid.wav
+
+Sample Rate: 96 kHz
+Number of Channels: 4
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: wav
+
+
+    ir_row_3c_centre_front.wav
+
+Sample Rate: 96 kHz
+Number of Channels: 4
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: wav
+
+
+    ir_row_3l_centre_mid.wav
+
+Sample Rate: 96 kHz
+Number of Channels: 4
+Bits per Sample: 16
+Duration: 2.5 s
+File Size: 1.83 MB
+File Format: wav 
